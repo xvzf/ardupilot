@@ -813,7 +813,7 @@ void AC_PosControl::desired_vel_to_pos(float nav_dt)
 
         if(_is_flightmode_guided) {
 
-            _curr_pos = _inav.get_position(); // Get current position
+            Vector3f _curr_pos = _inav.get_position(); // Get current position
 
             // We want to control x and y dimensions independent - needs to be here so the copter does not "jump" in air
             // to correct a large position error after a long period of velocity input
