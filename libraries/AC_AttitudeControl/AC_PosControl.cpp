@@ -74,6 +74,9 @@ AC_PosControl::AC_PosControl(const AP_AHRS_View& ahrs, const AP_InertialNav& ina
     _limit.vel_up = true;
     _limit.vel_down = true;
     _limit.accel_xy = true;
+
+    // Initialize with false as default, is set when using flightmode guided
+    _is_flightmode_guided = false;
 }
 
 ///
@@ -504,6 +507,11 @@ void AC_PosControl::accel_to_throttle(float accel_target_z)
 /// position controller
 ///
 
+// Used to set internal variable so the position control does not correct any position errors on the axis which currently has velocity input
+void AC_PosControl::set_flightmode(bool guided) {
+    _is_flightmode_guided = guided;
+}
+
 /// set_accel_xy - set horizontal acceleration in cm/s/s
 ///     calc_leash_length_xy should be called afterwards
 void AC_PosControl::set_accel_xy(float accel_cmss)
@@ -802,6 +810,22 @@ void AC_PosControl::desired_vel_to_pos(float nav_dt)
     } else {
         _pos_target.x += _vel_desired.x * nav_dt;
         _pos_target.y += _vel_desired.y * nav_dt;
+
+        if(_is_flightmode_guided) {
+
+            _curr_pos = _inav.get_position(); // Get current position
+
+            // We want to control x and y dimensions independent - needs to be here so the copter does not "jump" in air
+            // to correct a large position error after a long period of velocity input
+            if(_vel_desired.x != 0) {
+                _pos_target.x = _curr_pos.x + _vel_desired.x * nav_dt;
+            }
+
+            if(_vel_target.y != 0) {
+                _pos_target.y = _curr_pos.y + _vel_desired.y * nav_dt;
+            }
+        }
+
     }
 }
 
@@ -878,6 +902,21 @@ void AC_PosControl::pos_to_rate_xy(xy_mode mode, float dt, float ekfNavVelGainSc
                 _vel_target.x = _speed_cms * _vel_target.x/vel_total;
                 _vel_target.y = _speed_cms * _vel_target.y/vel_total;
             }
+        }
+    }
+
+    // When sending velocity commands, we don't want the copter to correct position errors on this axis,
+    // instead it should maintain a desired velocity.
+    if(_is_flightmode_guided) {
+
+        // We want to control x and y dimensions independent - E.g. if the copter should fly at vx = 10
+        // and vy = 0 , it should fly straight and still correct position errors in y dimension.
+        if(_vel_desired.x != 0) {
+            _vel_target.x = _vel_desired.x; // No need to correct position errors
+        }
+
+        if(_vel_target.y != 0) {
+            _vel_target.y = _vel_desired.y; // No need to correct position errors
         }
     }
 }

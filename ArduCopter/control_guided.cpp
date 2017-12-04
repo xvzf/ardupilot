@@ -41,6 +41,8 @@ bool Copter::guided_init(bool ignore_checks)
     if (position_ok() || ignore_checks) {
         // initialise yaw
         set_auto_yaw_mode(get_default_auto_yaw_mode(false));
+        // Set correct flight mode in AC_PosControl
+        pos_control->set_flightmode(true);
         // start in position control mode
         guided_pos_control_start();
         return true;
