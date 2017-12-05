@@ -57,7 +57,8 @@ public:
     enum xy_mode {
         XY_MODE_POS_ONLY = 0,           // position correction only (i.e. no velocity feed-forward)
         XY_MODE_POS_LIMITED_AND_VEL_FF, // for loiter - rate-limiting the position correction, velocity feed-forward
-        XY_MODE_POS_AND_VEL_FF          // for velocity controller - unlimited position correction, velocity feed-forward
+        XY_MODE_POS_AND_VEL_FF,         // for velocity controller - unlimited position correction, velocity feed-forward
+        XY_MODE_VEL_ONLY            // for velocity controller - limited position correction
     };
 
     ///
@@ -293,9 +294,6 @@ public:
     // time_since_last_xy_update - returns time in seconds since the horizontal position controller was last run
     float time_since_last_xy_update() const;
 
-    // Call when flightmode is guided to disable position control when velocity commands are executed
-    void set_flightmode(bool guided);
-
     static const struct AP_Param::GroupInfo var_info[];
 
 protected:
@@ -346,7 +344,7 @@ protected:
     ///
 
     /// desired_vel_to_pos - move position target using desired velocities
-    void desired_vel_to_pos(float nav_dt);
+    void desired_vel_to_pos(xy_mode mode, float nav_dt);
 
     /// pos_to_rate_xy - horizontal position error to velocity controller
     ///     converts position (_pos_target) to target velocity (_vel_target)
@@ -421,7 +419,6 @@ protected:
     Vector2f    _vehicle_horiz_vel;     // velocity to use if _flags.vehicle_horiz_vel_override is set
     float       _distance_to_target;    // distance to position target - for reporting only
     LowPassFilterFloat _vel_error_filter;   // low-pass-filter on z-axis velocity error
-    bool        _is_flightmode_guided;  // Set when flightmode is guided -> Used to cancel out any position correction
 
     Vector2f    _accel_target_jerk_limited; // acceleration target jerk limited to 100deg/s/s
     LowPassFilterVector2f _accel_target_filter; // acceleration target filter

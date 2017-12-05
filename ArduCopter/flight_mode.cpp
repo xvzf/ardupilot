@@ -255,9 +255,6 @@ void Copter::update_flight_mode()
 void Copter::exit_mode(control_mode_t old_control_mode, control_mode_t new_control_mode)
 {
 
-    // Reset AC_PosControl to normal operation mode
-    pos_control->set_flightmode(false);
-
 #if AUTOTUNE_ENABLED == ENABLED
     if (old_control_mode == AUTOTUNE) {
         autotune_stop();

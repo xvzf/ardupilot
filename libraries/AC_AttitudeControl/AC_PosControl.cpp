@@ -74,9 +74,6 @@ AC_PosControl::AC_PosControl(const AP_AHRS_View& ahrs, const AP_InertialNav& ina
     _limit.vel_up = true;
     _limit.vel_down = true;
     _limit.accel_xy = true;
-
-    // Initialize with false as default, is set when using flightmode guided
-    _is_flightmode_guided = false;
 }
 
 ///
@@ -419,14 +416,14 @@ void AC_PosControl::rate_to_accel_z()
 
     // feed forward desired acceleration calculation
     if (_dt > 0.0f) {
-    	if (!_flags.freeze_ff_z) {
-    		_accel_feedforward.z = (_vel_target.z - _vel_last.z)/_dt;
+        if (!_flags.freeze_ff_z) {
+            _accel_feedforward.z = (_vel_target.z - _vel_last.z)/_dt;
         } else {
-    		// stop the feed forward being calculated during a known discontinuity
-    		_flags.freeze_ff_z = false;
-    	}
+            // stop the feed forward being calculated during a known discontinuity
+            _flags.freeze_ff_z = false;
+        }
     } else {
-    	_accel_feedforward.z = 0.0f;
+        _accel_feedforward.z = 0.0f;
     }
 
     // store this iteration's velocities for the next iteration
@@ -507,11 +504,6 @@ void AC_PosControl::accel_to_throttle(float accel_target_z)
 /// position controller
 ///
 
-// Used to set internal variable so the position control does not correct any position errors on the axis which currently has velocity input
-void AC_PosControl::set_flightmode(bool guided) {
-    _is_flightmode_guided = guided;
-}
-
 /// set_accel_xy - set horizontal acceleration in cm/s/s
 ///     calc_leash_length_xy should be called afterwards
 void AC_PosControl::set_accel_xy(float accel_cmss)
@@ -587,7 +579,7 @@ void AC_PosControl::get_stopping_point_xy(Vector3f &stopping_point) const
     Vector3f curr_vel = _inav.get_velocity();
     float linear_distance;      // the distance at which we swap from a linear to sqrt response
     float linear_velocity;      // the velocity above which we swap from a linear to sqrt response
-    float stopping_dist;		// the distance within the vehicle can stop
+    float stopping_dist;        // the distance within the vehicle can stop
     float kP = _p_pos_xy.kP();
 
     // add velocity error to current velocity
@@ -611,7 +603,7 @@ void AC_PosControl::get_stopping_point_xy(Vector3f &stopping_point) const
 
     // calculate distance within which we can stop
     if (vel_total < linear_velocity) {
-    	stopping_dist = vel_total/kP;
+        stopping_dist = vel_total/kP;
     } else {
         linear_distance = _accel_cms/(2.0f*kP*kP);
         stopping_dist = linear_distance + (vel_total*vel_total)/(2.0f*_accel_cms);
@@ -683,7 +675,7 @@ void AC_PosControl::update_xy_controller(xy_mode mode, float ekfNavVelGainScaler
     calc_leash_length_xy();
 
     // translate any adjustments from pilot to loiter target
-    desired_vel_to_pos(dt);
+    desired_vel_to_pos(XY_MODE_POS_LIMITED_AND_VEL_FF, dt);
 
     // run position controller's position error to desired velocity step
     pos_to_rate_xy(mode, dt, ekfNavVelGainScaler);
@@ -755,10 +747,11 @@ void AC_PosControl::update_vel_controller_xyz(float ekfNavVelGainScaler)
         calc_leash_length_xy();
 
         // apply desired velocity request to position target
-        desired_vel_to_pos(dt);
+        desired_vel_to_pos(XY_MODE_VEL_ONLY, dt);
 
         // run position controller's position error to desired velocity step
-        pos_to_rate_xy(XY_MODE_POS_LIMITED_AND_VEL_FF, dt, ekfNavVelGainScaler);
+        // pos_to_rate_xy(XY_MODE_POS_LIMITED_AND_VEL_FF, dt, ekfNavVelGainScaler);
+        pos_to_rate_xy(XY_MODE_VEL_ONLY, dt, ekfNavVelGainScaler);
 
         // run velocity to acceleration step
         rate_to_accel_xy(dt, ekfNavVelGainScaler);
@@ -797,7 +790,7 @@ void AC_PosControl::calc_leash_length_xy()
 }
 
 /// desired_vel_to_pos - move position target using desired velocities
-void AC_PosControl::desired_vel_to_pos(float nav_dt)
+void AC_PosControl::desired_vel_to_pos(xy_mode mode, float nav_dt)
 {
     // range check nav_dt
     if( nav_dt < 0 ) {
@@ -811,7 +804,7 @@ void AC_PosControl::desired_vel_to_pos(float nav_dt)
         _pos_target.x += _vel_desired.x * nav_dt;
         _pos_target.y += _vel_desired.y * nav_dt;
 
-        if(_is_flightmode_guided) {
+        if(mode == XY_MODE_VEL_ONLY) {
 
             Vector3f _curr_pos = _inav.get_position(); // Get current position
 
@@ -895,28 +888,27 @@ void AC_PosControl::pos_to_rate_xy(xy_mode mode, float dt, float ekfNavVelGainSc
                 _vel_target.x += _vel_desired.x;
                 _vel_target.y += _vel_desired.y;
             }
+        }
 
+        if (mode == XY_MODE_VEL_ONLY) {
+            // We want to control x and y dimensions independent - E.g. if the copter should fly at vx = 10
+            // and vy = 0 , it should fly straight and still correct position errors in y dimension.
+            if(_vel_desired.x != 0) {
+                _vel_target.x = _vel_desired.x; // No need to correct position errors
+            }
+
+            if(_vel_target.y != 0) {
+                _vel_target.y = _vel_desired.y; // No need to correct position errors
+            }
+        }
+
+        if(mode == XY_MODE_VEL_ONLY || mode == XY_MODE_POS_AND_VEL_FF) {
             // scale velocity within speed limit
             float vel_total = norm(_vel_target.x, _vel_target.y);
             if (vel_total > _speed_cms) {
                 _vel_target.x = _speed_cms * _vel_target.x/vel_total;
                 _vel_target.y = _speed_cms * _vel_target.y/vel_total;
             }
-        }
-    }
-
-    // When sending velocity commands, we don't want the copter to correct position errors on this axis,
-    // instead it should maintain a desired velocity.
-    if(_is_flightmode_guided) {
-
-        // We want to control x and y dimensions independent - E.g. if the copter should fly at vx = 10
-        // and vy = 0 , it should fly straight and still correct position errors in y dimension.
-        if(_vel_desired.x != 0) {
-            _vel_target.x = _vel_desired.x; // No need to correct position errors
-        }
-
-        if(_vel_target.y != 0) {
-            _vel_target.y = _vel_desired.y; // No need to correct position errors
         }
     }
 }
@@ -944,16 +936,16 @@ void AC_PosControl::rate_to_accel_xy(float dt, float ekfNavVelGainScaler)
 
     // feed forward desired acceleration calculation
     if (dt > 0.0f) {
-    	if (!_flags.freeze_ff_xy) {
-    		_accel_feedforward.x = (_vel_target.x - _vel_last.x)/dt;
-    		_accel_feedforward.y = (_vel_target.y - _vel_last.y)/dt;
+        if (!_flags.freeze_ff_xy) {
+            _accel_feedforward.x = (_vel_target.x - _vel_last.x)/dt;
+            _accel_feedforward.y = (_vel_target.y - _vel_last.y)/dt;
         } else {
-    		// stop the feed forward being calculated during a known discontinuity
-    		_flags.freeze_ff_xy = false;
-    	}
+            // stop the feed forward being calculated during a known discontinuity
+            _flags.freeze_ff_xy = false;
+        }
     } else {
-    	_accel_feedforward.x = 0.0f;
-    	_accel_feedforward.y = 0.0f;
+        _accel_feedforward.x = 0.0f;
+        _accel_feedforward.y = 0.0f;
     }
 
     // store this iteration's velocities for the next iteration
