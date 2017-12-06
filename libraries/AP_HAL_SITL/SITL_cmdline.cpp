@@ -139,7 +139,7 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
     char *autotest_dir = nullptr;
     _fdm_address = "127.0.0.1";
 
-    const int BASE_PORT = 5760;
+    const int BASE_PORT = 5860;
     const int RCIN_PORT = 5501;
     const int RCOUT_PORT = 5502;
     const int FG_VIEW_PORT = 5503;
